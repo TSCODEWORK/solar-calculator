@@ -1,67 +1,27 @@
-import { NextRequest, NextResponse } from "next/server";
-import * as fs from "fs";
-import * as path from "path";
 import {
-  RegionalRatesDatabase,
-  StateRateRecord,
   BASE_STATE_DATA,
   UTILITIES_DB,
   METRO_ZIPS,
-} from "@/lib/sync-engine";
+} from "../../src/lib/regional-data";
 
-export const dynamic = "force-dynamic";
-
-let cachedData: RegionalRatesDatabase | null = null;
-
-function getDatabase(): RegionalRatesDatabase {
-  if (cachedData) return cachedData;
-  const filePath = path.resolve(process.cwd(), "public/data/regional_rates.json");
-  if (fs.existsSync(filePath)) {
-    try {
-      const raw = fs.readFileSync(filePath, "utf-8");
-      cachedData = JSON.parse(raw);
-      return cachedData!;
-    } catch {
-      // Fall through to memory fallback
-    }
-  }
-
-  // Memory fallback if file system is read-only or not yet generated
-  const stateRates: Record<string, StateRateRecord> = {};
-  for (const [st, item] of Object.entries(BASE_STATE_DATA)) {
-    stateRates[st] = { state: st, ...item };
-  }
-  return {
-    lastUpdated: new Date().toISOString(),
-    version: "2026.10",
-    source: "EIA API v2 & NREL PVWatts v8 Sync Service",
-    stateRates,
-    utilities: UTILITIES_DB,
-    zipPrefixMap: METRO_ZIPS,
-  };
-}
-
-export async function GET(request: NextRequest) {
+export async function onRequestGet(context: { request: Request; env: Record<string, string> }) {
   try {
-    const { searchParams } = new URL(request.url);
-    const query = (searchParams.get("query") || searchParams.get("zip") || "").trim();
-    const systemCapacityKw = parseFloat(searchParams.get("kw") || "10");
+    const url = new URL(context.request.url);
+    const query = (url.searchParams.get("query") || url.searchParams.get("zip") || "").trim();
+    const systemCapacityKw = parseFloat(url.searchParams.get("kw") || "10");
 
-    const db = getDatabase();
+    let resolvedState = "CA";
+    let resolvedCity = "San Francisco";
+    let resolvedZip = "94102";
+    let resolvedLat = 37.77;
+    let resolvedLon = -122.42;
+    let resolvedUtility = "Pacific Gas & Electric (PG&E)";
 
-    let resolvedState: string = "CA";
-    let resolvedCity: string = "San Francisco";
-    let resolvedZip: string = "94102";
-    let resolvedLat: number = 37.77;
-    let resolvedLon: number = -122.42;
-    let resolvedUtility: string = "Pacific Gas & Electric (PG&E)";
-
-    // Clean zip lookup (first 3 digits or full 5 digits)
     const numericZip = query.replace(/\D/g, "");
     if (numericZip.length >= 3) {
       const prefix = numericZip.slice(0, 3);
-      if (db.zipPrefixMap[prefix]) {
-        const item = db.zipPrefixMap[prefix];
+      if (METRO_ZIPS[prefix]) {
+        const item = METRO_ZIPS[prefix];
         resolvedZip = item.zip;
         resolvedCity = item.city;
         resolvedState = item.state;
@@ -92,20 +52,20 @@ export async function GET(request: NextRequest) {
         else if (zipNum >= 97000 && zipNum <= 97999) resolvedState = "OR";
         else if (zipNum >= 98000 && zipNum <= 99499) resolvedState = "WA";
 
-        const stateInfo = db.stateRates[resolvedState];
+        const stateInfo = BASE_STATE_DATA[resolvedState];
         if (stateInfo) {
           resolvedCity = stateInfo.name;
           resolvedUtility = stateInfo.primaryUtility;
         }
       }
-    } else if (query.length === 2 && db.stateRates[query.toUpperCase()]) {
+    } else if (query.length === 2 && BASE_STATE_DATA[query.toUpperCase()]) {
       resolvedState = query.toUpperCase();
-      const stateInfo = db.stateRates[resolvedState];
+      const stateInfo = BASE_STATE_DATA[resolvedState];
       resolvedCity = stateInfo.name;
       resolvedUtility = stateInfo.primaryUtility;
     } else if (query.length > 2) {
       const queryLower = query.toLowerCase();
-      const foundState = Object.entries(db.stateRates).find(
+      const foundState = Object.entries(BASE_STATE_DATA).find(
         ([st, s]) => s.name.toLowerCase().includes(queryLower) || st.toLowerCase() === queryLower
       );
       if (foundState) {
@@ -115,8 +75,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const stateProfile: StateRateRecord = db.stateRates[resolvedState] || db.stateRates["CA"];
-    const utilityInfo = db.utilities[resolvedUtility];
+    const stateProfile = BASE_STATE_DATA[resolvedState] || BASE_STATE_DATA["CA"];
+    const utilityInfo = UTILITIES_DB[resolvedUtility];
     const ratePerKwh = utilityInfo ? utilityInfo.ratePerKwh : stateProfile.ratePerKwh;
     const nemDefault = utilityInfo ? utilityInfo.nemDefault : stateProfile.nemPolicy;
 
@@ -125,13 +85,13 @@ export async function GET(request: NextRequest) {
     let dataSource = "Regional Solar Cache (NREL PVWatts v8 Benchmark)";
 
     // Live NREL PVWatts v8 lookup if API key is provided
-    const nrelKey = process.env.NREL_API_KEY;
+    const nrelKey = context.env?.NREL_API_KEY;
     if (nrelKey && nrelKey !== "DEMO_KEY") {
       try {
         const nrelUrl = `https://developer.nrel.gov/api/pvwatts/v8.json?api_key=${nrelKey}&lat=${resolvedLat}&lon=${resolvedLon}&system_capacity=${systemCapacityKw}&azimuth=180&tilt=20&array_type=1&module_type=0&losses=14`;
-        const res = await fetch(nrelUrl, { next: { revalidate: 86400 } });
+        const res = await fetch(nrelUrl);
         if (res.ok) {
-          const json = await res.json();
+          const json: any = await res.json();
           if (json.outputs) {
             annualKwhPerKw = Math.round(json.outputs.ac_annual / systemCapacityKw);
             if (Array.isArray(json.outputs.solrad_monthly)) {
@@ -145,7 +105,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const payload = {
       location: {
         zip: resolvedZip,
         city: resolvedCity,
@@ -160,13 +120,20 @@ export async function GET(request: NextRequest) {
         nemDefault,
       },
       dataSource,
-      lastUpdated: db.lastUpdated,
+      lastUpdated: new Date().toISOString(),
+    };
+
+    return new Response(JSON.stringify(payload), {
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "public, max-age=86400, s-maxage=86400",
+        "Access-Control-Allow-Origin": "*",
+      },
     });
-  } catch (error) {
-    console.error("[Solar Data API] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to resolve solar and tariff data" },
-      { status: 500 }
-    );
+  } catch (err) {
+    return new Response(JSON.stringify({ error: "Failed to resolve solar and tariff data" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }

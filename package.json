@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "sync-data": "tsx scripts/sync-rates-and-weather.ts"
+    "sync-data": "tsx scripts/sync-rates-and-weather.ts",
+    "deploy": "next build && wrangler pages deploy out --project-name solar-calculator --branch main --commit-dirty=true"
   },
   "dependencies": {
     "clsx": "^2.1.1",

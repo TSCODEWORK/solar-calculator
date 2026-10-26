@@ -9,6 +9,7 @@ import { HeroKpiCards } from "@/components/HeroKpiCards";
 import { ChartsSection } from "@/components/ChartsSection";
 import { AdvancedParameters } from "@/components/AdvancedParameters";
 import { calculateSolarPayback } from "@/lib/solar-math";
+import { resolveLocationClient } from "@/lib/location-lookup";
 import { SolarInputs, LocationData, NetMeteringType } from "@/types/solar";
 import { ShieldCheck, Zap, Database, ArrowRight, ExternalLink } from "lucide-react";
 
@@ -79,20 +80,14 @@ export function SolarCalculatorApp() {
     if (battEffParam) updated.batteryEfficiency = Number(battEffParam);
 
     if (zipParam && zipParam !== inputs.location?.zip) {
-      // Fetch location asynchronously
-      fetch(`/api/solar-data?query=${encodeURIComponent(zipParam)}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.location) {
-            setInputs((prev) => ({
-              ...prev,
-              ...updated,
-              location: data.location,
-              electricityTariff: updated.electricityTariff ?? data.location.ratePerKwh,
-              netMeteringType: updated.netMeteringType ?? data.location.nemDefault,
-            }));
-            if (data.lastUpdated) setLastUpdated(data.lastUpdated);
-          }
+      resolveLocationClient(zipParam)
+        .then((loc) => {
+          setInputs((prev) => ({
+            ...prev,
+            ...updated,
+            location: loc,
+            electricityTariff: updated.electricityTariff ?? loc.ratePerKwh,
+          }));
         })
         .catch(() => {
           setInputs((prev) => ({ ...prev, ...updated }));

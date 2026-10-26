@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { MapPin, Search, Zap, SunMedium, Building2, Check, RefreshCw, ChevronDown } from "lucide-react";
 import { LocationData } from "@/types/solar";
+import { resolveLocationClient } from "@/lib/location-lookup";
 
 interface LocationPickerProps {
   location: LocationData | undefined;
@@ -106,14 +107,26 @@ export function LocationPicker({
     if (!queryStr) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/solar-data?query=${encodeURIComponent(queryStr)}`);
-      if (!res.ok) throw new Error("Location not found");
-      const data = await res.json();
-      if (data.location) {
-        onLocationChange(data.location);
-        onTariffChange(data.location.ratePerKwh);
-        setSearchInput(`${data.location.city}, ${data.location.state} (${data.location.zip})`);
+      try {
+        const res = await fetch(`/api/solar-data/?query=${encodeURIComponent(queryStr)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.location) {
+            onLocationChange(data.location);
+            onTariffChange(data.location.ratePerKwh);
+            setSearchInput(`${data.location.city}, ${data.location.state} (${data.location.zip})`);
+            return;
+          }
+        }
+      } catch {
+        // Fall back to client resolution
       }
+
+      // Fast client-side resolution
+      const loc = await resolveLocationClient(queryStr);
+      onLocationChange(loc);
+      onTariffChange(loc.ratePerKwh);
+      setSearchInput(`${loc.city}, ${loc.state} (${loc.zip})`);
     } catch (err) {
       console.error(err);
     } finally {
