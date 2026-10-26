@@ -1,4 +1,4 @@
-# Self-Updating Solar & Storage Payback Engine
+# Solar Calculator
 
 A production-ready, client-side interactive Solar & Battery Storage Payback Calculator web application with an automated weekly background updater for regional solar insolation and local retail electricity utility rates.
 

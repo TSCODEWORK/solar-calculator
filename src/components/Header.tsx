@@ -54,7 +54,7 @@ export function Header({ lastUpdated, inputs, result }: HeaderProps) {
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-sm tracking-widest uppercase font-semibold text-slate-100">
-                  Solar & Storage Payback Engine
+                  Solar Calculator
                 </span>
                 <span className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono uppercase bg-slate-800/80 text-emerald-400 border border-emerald-500/30 rounded">
                   v2.4 Live

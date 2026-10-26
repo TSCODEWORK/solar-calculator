@@ -19,10 +19,11 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Solar & Storage Payback Engine | Free, Private ROI & LCOE Calculator",
+  title: "Solar Calculator | Free, Private Solar & Storage Payback Engine",
   description:
     "Production-grade interactive solar and battery storage payback calculator with automated weekly EIA electricity rates and NREL PVWatts v8 insolation. 100% private with zero lead-capture.",
   keywords: [
+    "solar calculator",
     "solar payback calculator",
     "battery storage roi",
     "nrel pvwatts v8",
@@ -30,7 +31,7 @@ export const metadata: Metadata = {
     "nem 3.0 calculator",
     "levelized cost of energy",
   ],
-  authors: [{ name: "Self-Updating Solar Engine" }],
+  authors: [{ name: "Solar Calculator Engine" }],
 };
 
 export default function RootLayout({

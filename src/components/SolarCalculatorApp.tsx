@@ -169,7 +169,7 @@ export function SolarCalculatorApp() {
             <div className="flex items-center gap-2">
               <span className="flex h-2 w-2 rounded-full bg-emerald-400" />
               <h1 className="text-base sm:text-lg font-mono font-bold text-slate-100 tracking-tight">
-                Self-Updating Solar & Storage Payback Engine
+                Solar Calculator • Self-Updating Payback Engine
               </h1>
             </div>
             <p className="text-xs text-slate-400 font-sans max-w-3xl">
