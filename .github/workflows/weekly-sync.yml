@@ -1,0 +1,36 @@
+name: Weekly Rates & Solar Weather Sync
+
+on:
+  schedule:
+    # Run every Sunday at 04:00 UTC
+    - cron: '0 4 * * 0'
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  sync-rates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Execute Weekly Data Sync Script
+        env:
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+          NREL_API_KEY: ${{ secrets.NREL_API_KEY }}
+        run: npm run sync-data
+
+      - name: Commit and push changes if data updated
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/data/regional_rates.json data/tariffs.json data/solar_cache.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore(data): automated weekly EIA rates & solar irradiance refresh [skip ci]" && git push)
