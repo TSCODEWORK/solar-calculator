@@ -2,41 +2,90 @@
 
 @layer base {
   :root {
-    --background: #080c15;
-    --foreground: #f1f5f9;
-    --card: #0d1424;
-    --card-foreground: #f8fafc;
-    --popover: #0d1424;
-    --popover-foreground: #f8fafc;
-    --primary: #10b981;
-    --primary-foreground: #022c22;
-    --secondary: #1e293b;
-    --secondary-foreground: #f8fafc;
-    --muted: #1e293b;
-    --muted-foreground: #94a3b8;
-    --accent: #1e293b;
-    --accent-foreground: #f8fafc;
-    --destructive: #ef4444;
-    --destructive-foreground: #ffffff;
-    --border: #1e293b;
-    --input: #1e293b;
-    --ring: #10b981;
+    --bg: #03140c;
+    --bg-grad: radial-gradient(120% 85% at 50% -10%, #063721 0%, #032114 45%, #02120b 100%);
+    --ink: #eaf7ee;
+    --muted: #86bfa0;
+    --dim: #508066;
+    --glass: rgba(255, 255, 255, 0.055);
+    --glass-b: rgba(255, 255, 255, 0.11);
+    --glass-hover: rgba(255, 255, 255, 0.09);
+    --emerald: #22c55e;
+    --teal: #10b981;
+    --blue: #60a5fa;
+    --amber: #fbbf24;
+    --r: 22px;
   }
 }
 
 body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11", "tnum";
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  font-feature-settings: "tnum" 1, "cv11" 1;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
-/* Custom range input styling */
+/* Ambient Maipo green background */
+.ambient-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  background: radial-gradient(120% 85% at 50% -10%, #073b24 0%, #042416 45%, #02120b 100%);
+}
+
+.ambient-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.orb-1 {
+  width: 440px;
+  height: 440px;
+  background: #065f46;
+  top: -100px;
+  left: -100px;
+}
+
+.orb-2 {
+  width: 380px;
+  height: 380px;
+  background: #047857;
+  top: 35%;
+  right: -120px;
+  opacity: 0.35;
+}
+
+.orb-3 {
+  width: 360px;
+  height: 360px;
+  background: #022c22;
+  bottom: -100px;
+  left: 20%;
+  opacity: 0.5;
+}
+
+/* Frosted glass card */
+.maipo-glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.035));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--r);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Range sliders */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
-  background: #1e293b;
+  background: rgba(255, 255, 255, 0.1);
   height: 6px;
   border-radius: 9999px;
   outline: none;
@@ -45,63 +94,42 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: #10b981;
-  border: 2px solid #080c15;
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+  background: #22c55e;
+  border: 2px solid #031e12;
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.6);
   cursor: pointer;
   transition: transform 0.15s ease, background-color 0.15s ease;
 }
 
 input[type="range"]::-webkit-slider-thumb:hover {
   transform: scale(1.15);
-  background: #34d399;
+  background: #4ade80;
 }
 
 input[type="range"]::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  background: #10b981;
-  border: 2px solid #080c15;
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+  background: #22c55e;
+  border: 2px solid #031e12;
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.6);
   cursor: pointer;
 }
 
-/* Custom scrollbars */
+/* Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #080c15;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #334155;
-}
-
-/* Print styling for PDF export */
-@media print {
-  body {
-    background-color: #ffffff !important;
-    color: #0f172a !important;
-  }
-  .no-print {
-    display: none !important;
-  }
-  .print-card {
-    border: 1px solid #cbd5e1 !important;
-    background: #ffffff !important;
-    color: #0f172a !important;
-    box-shadow: none !important;
-  }
 }
