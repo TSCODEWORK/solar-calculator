@@ -32,6 +32,10 @@ export const metadata: Metadata = {
     "levelized cost of energy",
   ],
   authors: [{ name: "Solar Calculator Engine" }],
+  robots: {
+    index: false,
+    follow: false,
+  },
 };
 
 export default function RootLayout({
