@@ -1,5 +1,6 @@
 import { LocationData } from "@/types/solar";
 import { RegionalRatesDatabase, BASE_STATE_DATA, UTILITIES_DB, METRO_ZIPS } from "./regional-data";
+import { PLACES_INDEX, PlaceSuggestion } from "./cities-database";
 
 let cachedDb: RegionalRatesDatabase | null = null;
 
@@ -30,9 +31,111 @@ export async function getRegionalDatabase(): Promise<RegionalRatesDatabase> {
   return cachedDb;
 }
 
+/**
+ * Searches places for instant autocomplete suggestions as the user types.
+ * Returns up to maxResults enriched suggestions with rates and sun hours.
+ */
+export function searchPlaceSuggestions(query: string, maxResults = 6): PlaceSuggestion[] {
+  const clean = query.trim().toLowerCase();
+  if (!clean) return [];
+
+  const cleanNoComma = clean.replace(/,/g, " ").replace(/\s+/g, " ").trim();
+  const tokens = cleanNoComma.split(" ").filter(Boolean);
+
+  const scored: { item: PlaceSuggestion; score: number }[] = [];
+
+  for (const place of PLACES_INDEX) {
+    const cityLower = place.city.toLowerCase();
+    const stateLower = place.state.toLowerCase();
+    const stateNameLower = place.stateName.toLowerCase();
+    const nameLower = place.name.toLowerCase();
+    const zipPrefix = place.zip;
+
+    let score = 0;
+
+    // Exact city prefix match gets top score
+    if (cityLower.startsWith(clean)) {
+      score = 100 - (cityLower.length - clean.length);
+    } else if (nameLower.startsWith(clean)) {
+      score = 90;
+    } else if (clean.length === 2 && stateLower === clean) {
+      // 2-letter state abbreviation
+      score = place.isState ? 95 : 75;
+    } else if (stateNameLower.startsWith(clean)) {
+      score = place.isState ? 85 : 65;
+    } else if (zipPrefix.startsWith(clean)) {
+      score = 80;
+    } else if (tokens.length > 1 && tokens.every((t) => nameLower.includes(t) || stateNameLower.includes(t) || zipPrefix.startsWith(t))) {
+      // Multi-token match like "austin tx" or "san fran"
+      score = 70;
+    } else if (cityLower.includes(clean)) {
+      score = 50;
+    } else if (stateNameLower.includes(clean)) {
+      score = 40;
+    }
+
+    if (score > 0) {
+      // Enrich with rate and sun hours from BASE_STATE_DATA
+      const stateInfo = BASE_STATE_DATA[place.state] || BASE_STATE_DATA["CA"];
+      const utilityInfo = place.utility && UTILITIES_DB[place.utility] ? UTILITIES_DB[place.utility] : null;
+      const ratePerKwh = utilityInfo ? utilityInfo.ratePerKwh : stateInfo.ratePerKwh;
+
+      scored.push({
+        item: {
+          ...place,
+          ratePerKwh,
+          peakSunHours: stateInfo.peakSunHours,
+        },
+        score,
+      });
+    }
+  }
+
+  // Sort by score descending, then by city name length
+  scored.sort((a, b) => b.score - a.score || a.item.city.length - b.item.city.length);
+  return scored.slice(0, maxResults).map((s) => s.item);
+}
+
+/**
+ * Finds the single best autocomplete match for inline ghost completion.
+ */
+export function getTopAutocompleteMatch(query: string): PlaceSuggestion | null {
+  const suggestions = searchPlaceSuggestions(query, 1);
+  return suggestions.length > 0 ? suggestions[0] : null;
+}
+
+/**
+ * Resolves a location string or suggestion into full LocationData.
+ */
 export async function resolveLocationClient(query: string): Promise<LocationData> {
   const db = await getRegionalDatabase();
   const clean = query.trim();
+
+  // 1. Direct match with PlaceSuggestion
+  const suggestions = searchPlaceSuggestions(clean, 1);
+  if (suggestions.length > 0 && (
+    suggestions[0].name.toLowerCase() === clean.toLowerCase() ||
+    suggestions[0].city.toLowerCase() === clean.toLowerCase() ||
+    suggestions[0].zip === clean
+  )) {
+    const s = suggestions[0];
+    const stateProfile = db.stateRates[s.state] || db.stateRates["CA"];
+    const utilityInfo = s.utility && db.utilities[s.utility] ? db.utilities[s.utility] : null;
+    const ratePerKwh = utilityInfo ? utilityInfo.ratePerKwh : stateProfile.ratePerKwh;
+
+    return {
+      zip: s.zip,
+      city: s.city,
+      state: s.state,
+      lat: s.lat,
+      lon: s.lon,
+      utility: s.utility || stateProfile.primaryUtility,
+      ratePerKwh,
+      peakSunHours: stateProfile.peakSunHours,
+      annualKwhPerKw: stateProfile.annualKwhPerKw,
+      monthlyIrradiance: [...stateProfile.monthlyIrradiance],
+    };
+  }
 
   let resolvedState = "CA";
   let resolvedCity = "San Francisco";

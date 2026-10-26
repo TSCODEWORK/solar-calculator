@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Sun,
@@ -9,6 +9,7 @@ import {
   Share2,
   Check,
   Search,
+  X,
   Sliders,
   DollarSign,
   Battery,
@@ -20,7 +21,8 @@ import {
 } from "lucide-react";
 import { GeminiPaybackChart } from "./GeminiPaybackChart";
 import { calculateSolarPayback } from "@/lib/solar-math";
-import { resolveLocationClient } from "@/lib/location-lookup";
+import { resolveLocationClient, searchPlaceSuggestions } from "@/lib/location-lookup";
+import { PlaceSuggestion } from "@/lib/cities-database";
 import { SolarInputs, LocationData, NetMeteringType } from "@/types/solar";
 import { formatCurrency, formatNumber } from "@/lib/utils";
 
@@ -65,6 +67,15 @@ export function SimpleCalculator() {
   const [locationSearch, setLocationSearch] = useState("San Francisco, CA");
   const [isSearchingLocation, setIsSearchingLocation] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Autocomplete state
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [ghostSuffix, setGhostSuffix] = useState("");
+  const [isFocused, setIsFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
   // Initialize theme from system preference or localStorage
   useEffect(() => {
@@ -156,24 +167,125 @@ export function SimpleCalculator() {
     [updateUrl]
   );
 
-  const handleLocationSubmit = async (e: React.FormEvent) => {
+  const applyLocation = useCallback(
+    async (query: string) => {
+      if (!query.trim()) return;
+      setIsSearchingLocation(true);
+      setShowDropdown(false);
+      setGhostSuffix("");
+      try {
+        const loc = await resolveLocationClient(query);
+        setInputs((prev) => {
+          const next = {
+            ...prev,
+            location: loc,
+            electricityTariff: loc.ratePerKwh,
+          };
+          updateUrl(next);
+          return next;
+        });
+        setLocationSearch(`${loc.city}, ${loc.state}`);
+      } finally {
+        setIsSearchingLocation(false);
+      }
+    },
+    [updateUrl]
+  );
+
+  const selectSuggestion = useCallback(
+    (item: PlaceSuggestion) => {
+      const target = item.isState ? item.stateName : item.name;
+      setLocationSearch(target);
+      setGhostSuffix("");
+      setShowDropdown(false);
+      setHighlightedIndex(-1);
+      applyLocation(target);
+    },
+    [applyLocation]
+  );
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setLocationSearch(val);
+    setHighlightedIndex(-1);
+
+    if (!val.trim()) {
+      setSuggestions([]);
+      setGhostSuffix("");
+      setShowDropdown(false);
+      return;
+    }
+
+    const results = searchPlaceSuggestions(val, 6);
+    setSuggestions(results);
+    setShowDropdown(results.length > 0);
+
+    // Compute ghost completion suffix from top matching result
+    if (results.length > 0) {
+      const top = results[0];
+      const topLabel = top.isState ? top.stateName : top.name;
+      if (topLabel.toLowerCase().startsWith(val.toLowerCase())) {
+        setGhostSuffix(topLabel.slice(val.length));
+      } else {
+        setGhostSuffix("");
+      }
+    } else {
+      setGhostSuffix("");
+    }
+
+    // Auto-populate immediately if 5-digit US ZIP code is typed
+    if (/^\d{5}$/.test(val.trim())) {
+      applyLocation(val.trim());
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Tab" || (e.key === "ArrowRight" && inputRef.current?.selectionStart === locationSearch.length)) {
+      if (highlightedIndex >= 0 && suggestions[highlightedIndex]) {
+        e.preventDefault();
+        selectSuggestion(suggestions[highlightedIndex]);
+      } else if (ghostSuffix && suggestions[0]) {
+        e.preventDefault();
+        selectSuggestion(suggestions[0]);
+      }
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (highlightedIndex >= 0 && suggestions[highlightedIndex]) {
+        selectSuggestion(suggestions[highlightedIndex]);
+      } else if (ghostSuffix && suggestions[0]) {
+        selectSuggestion(suggestions[0]);
+      } else if (locationSearch.trim()) {
+        applyLocation(locationSearch);
+      }
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setShowDropdown(true);
+      setHighlightedIndex((prev) => (prev < suggestions.length - 1 ? prev + 1 : 0));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : suggestions.length - 1));
+    } else if (e.key === "Escape") {
+      setShowDropdown(false);
+    }
+  };
+
+  const handleClearLocation = () => {
+    setLocationSearch("");
+    setGhostSuffix("");
+    setSuggestions([]);
+    setShowDropdown(false);
+    setHighlightedIndex(-1);
+    inputRef.current?.focus();
+  };
+
+  const handleLocationSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!locationSearch.trim()) return;
-    setIsSearchingLocation(true);
-    try {
-      const loc = await resolveLocationClient(locationSearch);
-      setInputs((prev) => {
-        const next = {
-          ...prev,
-          location: loc,
-          electricityTariff: loc.ratePerKwh,
-        };
-        updateUrl(next);
-        return next;
-      });
-      setLocationSearch(`${loc.city}, ${loc.state}`);
-    } finally {
-      setIsSearchingLocation(false);
+    if (highlightedIndex >= 0 && suggestions[highlightedIndex]) {
+      selectSuggestion(suggestions[highlightedIndex]);
+    } else if (ghostSuffix && suggestions[0]) {
+      selectSuggestion(suggestions[0]);
+    } else {
+      applyLocation(locationSearch);
     }
   };
 
@@ -282,7 +394,7 @@ export function SimpleCalculator() {
 
             {/* Fast, Simplified Controls Card (Sliders only, no preset buttons) */}
             <div className="maipo-glass p-5 sm:p-6 space-y-5">
-              {/* General Area */}
+              {/* General Area with Instant Autocomplete */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs sm:text-sm font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
@@ -290,31 +402,140 @@ export function SimpleCalculator() {
                     <span>General Area (Sun & Electricity Rate)</span>
                   </label>
                   {inputs.location && (
-                    <span className="text-xs text-[var(--text-muted)] font-medium">
-                      {inputs.location.peakSunHours} peak sun hrs/day
+                    <span className="text-xs text-[var(--accent-green)] font-semibold flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      <span>{inputs.location.peakSunHours} hrs sun • ${(inputs.electricityTariff).toFixed(2)}/kWh</span>
                     </span>
                   )}
                 </div>
 
-                <form onSubmit={handleLocationSubmit} className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-2.5 w-4 h-4 text-[var(--text-muted)]" />
+                <form onSubmit={handleLocationSubmit} className="relative">
+                  <div className="relative flex-1" ref={searchContainerRef}>
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)] pointer-events-none z-10" />
+
+                    {/* Ghost completion text rendered inline with identical styling */}
+                    {ghostSuffix && isFocused && (
+                      <div
+                        aria-hidden="true"
+                        className="absolute inset-0 pl-10 pr-9 py-2 text-xs sm:text-sm font-normal pointer-events-none flex items-center overflow-hidden whitespace-pre select-none text-[var(--text-muted)] opacity-40 z-0"
+                      >
+                        <span className="invisible">{locationSearch}</span>
+                        <span>{ghostSuffix}</span>
+                      </div>
+                    )}
+
                     <input
+                      ref={inputRef}
                       type="text"
                       value={locationSearch}
-                      onChange={(e) => setLocationSearch(e.target.value)}
-                      placeholder="Enter ZIP code (e.g. 94103, 78701) or City, State..."
-                      className="w-full pl-9 pr-3 py-2 bg-[var(--input-bg)] border border-[var(--input-border)] focus:border-[var(--accent-green)] focus:outline-none rounded-xl text-xs sm:text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] transition-colors"
+                      onChange={handleSearchChange}
+                      onKeyDown={handleKeyDown}
+                      onFocus={() => {
+                        setIsFocused(true);
+                        if (locationSearch.trim().length > 0) {
+                          const results = searchPlaceSuggestions(locationSearch, 6);
+                          setSuggestions(results);
+                          setShowDropdown(results.length > 0);
+                        }
+                      }}
+                      onBlur={() => {
+                        setTimeout(() => {
+                          setIsFocused(false);
+                          setShowDropdown(false);
+                        }, 220);
+                      }}
+                      placeholder="Type city, state, or ZIP (e.g. Austin, Denver, 94103)..."
+                      className="relative z-[1] w-full pl-10 pr-16 py-2.5 bg-[var(--input-bg)] border border-[var(--input-border)] focus:border-[var(--accent-green)] focus:outline-none rounded-xl text-xs sm:text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] transition-colors shadow-inner"
                     />
+
+                    {/* Right-side actions inside input: Spinner or Clear button */}
+                    <div className="absolute right-2.5 top-1/2 -translate-y-1/2 z-10 flex items-center gap-1">
+                      {isSearchingLocation ? (
+                        <RefreshCw className="w-4 h-4 text-[var(--accent-green)] animate-spin mr-1" />
+                      ) : locationSearch ? (
+                        <button
+                          type="button"
+                          onClick={handleClearLocation}
+                          aria-label="Clear location"
+                          className="p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {/* Floating Autocomplete Suggestions Dropdown */}
+                    {showDropdown && suggestions.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-xl border border-[var(--input-border)] bg-[var(--card-bg)] backdrop-blur-2xl shadow-2xl overflow-hidden py-1 divide-y divide-black/5 dark:divide-white/5 animate-in fade-in zoom-in-95 duration-100">
+                        {suggestions.map((item, idx) => {
+                          const isSelected = idx === highlightedIndex;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                selectSuggestion(item);
+                              }}
+                              onMouseEnter={() => setHighlightedIndex(idx)}
+                              className={`w-full px-3.5 py-2.5 flex items-center justify-between text-left transition-colors cursor-pointer ${
+                                isSelected
+                                  ? "bg-[var(--accent-green)]/20 text-[var(--accent-green)]"
+                                  : "hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-primary)]"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <MapPin
+                                  className={`w-3.5 h-3.5 shrink-0 ${
+                                    isSelected ? "text-[var(--accent-green)]" : "text-[var(--text-muted)]"
+                                  }`}
+                                />
+                                <div className="truncate">
+                                  <span className="font-semibold text-xs sm:text-sm">{item.name}</span>
+                                  {item.isState && (
+                                    <span className="ml-1.5 text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-[var(--accent-green)]/15 text-[var(--accent-green)]">
+                                      State
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="shrink-0 flex items-center gap-2 text-right">
+                                {item.ratePerKwh !== undefined && (
+                                  <span className="text-xs font-mono font-medium text-[var(--accent-green)]">
+                                    ${item.ratePerKwh.toFixed(2)}/kWh
+                                  </span>
+                                )}
+                                {item.peakSunHours !== undefined && (
+                                  <span className="text-[11px] text-[var(--text-muted)] hidden sm:inline">
+                                    • {item.peakSunHours} hrs sun
+                                  </span>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                        <div className="px-3.5 py-1.5 bg-black/5 dark:bg-black/25 flex items-center justify-between text-[10px] text-[var(--text-muted)] font-medium">
+                          <span>Auto-populates solar hours & utility rate</span>
+                          <span className="font-mono bg-black/10 dark:bg-white/10 px-1.5 py-0.5 rounded">
+                            Tab or ↵ to finish
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <button
-                    type="submit"
-                    disabled={isSearchingLocation}
-                    className="px-4 py-2 bg-[var(--accent-green)] hover:opacity-90 text-xs font-semibold text-white rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    {isSearchingLocation ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : "Set Area"}
-                  </button>
                 </form>
+
+                {/* Subtext info for active location */}
+                {inputs.location && (
+                  <div className="flex items-center justify-between text-[11px] text-[var(--text-muted)] px-1 pt-0.5">
+                    <span className="truncate">
+                      Utility: <span className="font-semibold text-[var(--text-primary)]">{inputs.location.utility}</span>
+                    </span>
+                    <span className="shrink-0 font-mono text-[var(--accent-amber)] font-medium">
+                      {(inputs.arraySizeKw * inputs.location.peakSunHours * 365 * 0.86).toFixed(0)} kWh/yr estimated
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Money to Spend (Initial Cost) - Slider Only */}
